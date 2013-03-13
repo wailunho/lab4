@@ -649,12 +649,38 @@ static void task_upload(task_t *t)
 			break;
 	}
 
+
 	assert(t->head == 0);
 	if (osp2p_snscanf(t->buf, t->tail, "GET %s OSP2P\n", t->filename) < 0) {
 		error("* Odd request %.*s\n", t->tail, t->buf);
 		goto exit;
 	}
 	t->head = t->tail = 0;
+
+	//exercise 2: make sure the name of the file requested is not too long
+	if(strlen(t->filename) > FILENAMESIZ)
+	{
+		error("Error: file name is too long\n");
+		goto exit;
+	}
+
+	//exercise 2: make sure the files is not outside the current directory
+	char current_dir_buf[PATH_MAX];
+	char dir_buf[PATH_MAX];
+	char * current_dir = getcwd(current_dir_buf, PATH_MAX);
+	if((getcwd(current_dir_buf, PATH_MAX)) == NULL)
+	{
+		error("Error: getcwd() error\n");
+		goto exit;
+	}
+	else 
+	{
+		if(strncpy(current_dir, realpath(t->filename, dir_buf), strlen(current_dir)) != 0)
+		{
+			error("Error: File requested is outside the current directory\n");
+			goto exit;
+		}
+	}
 
 	t->disk_fd = open(t->filename, O_RDONLY);
 	if (t->disk_fd == -1) {
