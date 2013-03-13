@@ -476,7 +476,14 @@ task_t *start_download(task_t *tracker_task, const char *filename)
 		error("* Error while allocating task");
 		goto exit;
 	}
-	strcpy(t->filename, filename);
+
+	//strcpy(t->filename, filename);
+
+	//exercise 2
+	//fixed the buffer overrun bug
+	strncpy(t->filename, filename, FILENAMESIZ);
+	//add the null-character at the end manually.
+	t->filename[FILENAMESIZ - 1] = '\0';
 
 	// add peers
 	s1 = tracker_task->buf;
@@ -753,19 +760,62 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
+
 	// Connect to the tracker and register our files.
 	tracker_task = start_tracker(tracker_addr, tracker_port);
 	listen_task = start_listen();
 	register_files(tracker_task, myalias);
 
 	// First, download files named on command line.
+	/*
 	for (; argc > 1; argc--, argv++)
 		if ((t = start_download(tracker_task, argv[1])))
 			task_download(t, tracker_task);
+			*/
+
+	//execrise 1
+	//Parallel Uploads and Downloads
+	pid_t pid;
+	for (; argc > 1; argc--, argv++)
+	{
+		if ((t = start_download(tracker_task, argv[1])))
+		{
+			pid = fork();
+
+			if(pid == 0)
+			{
+				task_download(t, tracker_task);
+				_exit(0);
+			}
+			else if(pid == -1)
+			{
+				error("Fork failed");
+			}
+			else
+				continue;
+		}
+	}
 
 	// Then accept connections from other peers and upload files to them!
-	while ((t = task_listen(listen_task)))
-		task_upload(t);
+	//while ((t = task_listen(listen_task)))
+	//	task_upload(t);
+
+	while((t = task_listen(listen_task)))
+	{
+		pid = fork();
+
+		if(pid == 0)
+		{
+			task_upload(t);
+			_exit(0);
+		}
+		else if(pid == -1)
+		{
+			error("Fork failed");
+		}
+		else
+			continue;
+	}
 
 	return 0;
 }
