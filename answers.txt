@@ -43,12 +43,25 @@ wrong files(files that we do not want to upload).
 2) It detects if file requested is in the correct directory. 
 (same security issue as 1 above)
 
-
+3) It detects if the file size exceed 2 Gib to prevent to prevent another
+peer to fill up this peer's disk.
 
 # EXERCISE 3: Describe the attacks you implemented for "evil mode".  Why
 #    are they attacks?  (~3-10 sentences each)
+1) Modified task_upload so that it uploads an unlimited size of data
+to fill up the downloader's disk.
+
+2) Modified task_download so that it keep requesting the same file 
+over and over asking the peer to upload it. So the peer would
+keep uploading unless it refuse to, but the skeleton code
+does not protect the peer from that.
 
 # Extra credit problems
 #Extra credit problem: none
 
 # Add any other information you'd like us to know below this line.
+search for 
+exercise 1
+exercise 2
+exercise 3
+to locate the added codes.
