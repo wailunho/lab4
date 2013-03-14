@@ -20,7 +20,7 @@ Email: arlonghk@gmail.com
 # Partner 2 (if you're working in a team)
 Name: Nabil Nathani
 Student ID: 803782632
-Email: nabilnathani@ucla.edu
+Email: nabilnathani@gmail.com
 
 # EXERCISE 1: What method you used to make your peer download and upload
 #    files in parallel?  (~1-3 sentences)
